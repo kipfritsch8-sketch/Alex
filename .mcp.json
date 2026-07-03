@@ -6,7 +6,7 @@
     },
     "memory": {
       "type": "http",
-      "url": "https://discovered-changes-producing-passed.trycloudflare.com/mcp"
+      "url": "https://mem.alexmem.xyz/mcp"
     }
   }
 }
