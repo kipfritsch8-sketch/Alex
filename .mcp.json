@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "foxgate": {
+      "type": "http",
+      "url": "https://foxgate.kipfritsch8.workers.dev/mcp?token=abd7d3fecf958fa7f90e2acda7a8fecb4f5148b98d74c8ea3af6fcb8c8207af6"
+    }
+  }
+}
