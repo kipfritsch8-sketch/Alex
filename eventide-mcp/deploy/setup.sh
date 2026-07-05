@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VPS 一键部署脚本（Ubuntu/Debian）
-# 用法：sudo bash setup.sh --domain mcp.你的域名.com --api-key 你的密钥
+# 用法：sudo bash setup.sh --domain eventide.alexmem.xyz --api-key 你的密钥
 
 set -euo pipefail
 
@@ -43,16 +43,42 @@ cp "$(dirname "$0")/eventide-mcp.service" /etc/systemd/system/eventide-mcp.servi
 systemctl daemon-reload
 systemctl enable --now eventide-mcp
 
-echo "==> 配置 nginx"
-sed "s/mcp.你的域名.com/${DOMAIN}/g" "$(dirname "$0")/nginx.conf" \
-  > /etc/nginx/sites-available/eventide-mcp
+echo "==> 配置 nginx（先用 HTTP，certbot 会自动升级 HTTPS）"
+cat > /etc/nginx/sites-available/eventide-mcp <<NGINX
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    proxy_buffering off;
+    proxy_cache off;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header   Connection "";
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+NGINX
+
 ln -sf /etc/nginx/sites-available/eventide-mcp /etc/nginx/sites-enabled/eventide-mcp
+rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-echo "==> 申请 Let's Encrypt 证书"
+echo "==> 申请 Let's Encrypt 证书（自动配置 HTTPS）"
 certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "admin@${DOMAIN}"
+
+# certbot 升级为 HTTPS 后，补上 SSE 必需的长连接头
+sed -i '/proxy_pass/a\        proxy_read_timeout 3600s;\n        proxy_send_timeout 3600s;' \
+  /etc/nginx/sites-available/eventide-mcp 2>/dev/null || true
+nginx -t && systemctl reload nginx
 
 echo ""
 echo "✓ 部署完成！"
-echo "  SSE 端点: https://${DOMAIN}/sse"
-echo "  Claude Desktop 配置中 api_key 填: ${API_KEY}"
+echo "  SSE 端点:  https://${DOMAIN}/sse"
+echo "  API Key:   ${API_KEY}"
+echo ""
+echo "在 Claude.ai Settings → Connectors → Add custom connector 填入上面两项即可。"
