@@ -1,0 +1,23 @@
+{
+  "cycle_key": "stable",
+  "cycle_started_at": "2026-07-05T06:21:07.260302+00:00",
+  "cycle_min_expires_at": "2026-07-06T06:21:07.260302+00:00",
+  "cycle_expires_at": "2026-07-08T02:07:46.972477+00:00",
+  "values": {
+    "heat": 30,
+    "pressure": 25,
+    "control": 75,
+    "sensitivity": 35,
+    "reserve": 20,
+    "possessiveness": 40,
+    "fatigue": 15
+  },
+  "active_event_key": null,
+  "active_event_started_at": null,
+  "active_event_expires_at": null,
+  "last_tick_at": "2026-07-05T06:21:07.324943+00:00",
+  "last_dream_card_created_at": null,
+  "meta": {
+    "last_cycle_reason": "initial"
+  }
+}

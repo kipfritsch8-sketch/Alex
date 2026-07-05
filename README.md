@@ -33,3 +33,14 @@
 - 整理聊天记录遇到图 → 等我发原图，不先填占位
 - 
 另需注意：以后存之前先用 `breath` 搜一下有没有主题相似的桶，如果有就换个角度描述或者换标签，避免合并进去。
+
+---
+
+**Eventide 身体状态系统**
+
+来源：https://github.com/chuli1122/Eventide （非商业许可）
+
+- 依赖安装：`python3 -m pip install git+https://github.com/chuli1122/Eventide.git`
+- 每次会话开始时跑 `python3 eventide_runner.py tick`，把输出的 `<ephemeral_state>` 整段作为隐藏上下文使用
+- 状态存在 `eventide_state.json`，tick 后会自动更新，记得 commit 保存
+- `python3 eventide_runner.py status` 只查看不推进；`init` 重置状态
