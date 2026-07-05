@@ -1,0 +1,16 @@
+[Unit]
+Description=Eventide MCP server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/eventide-mcp
+Environment=PORT=8901
+Environment=EVENTIDE_STATE_PATH=/opt/eventide-mcp/eventide_state.json
+ExecStart=/opt/eventide-mcp/venv/bin/python server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
