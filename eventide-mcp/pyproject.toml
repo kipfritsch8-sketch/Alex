@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eventide-mcp"
+version = "0.1.0"
+description = "MCP server for Eventide physiological state system"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "eventide @ git+https://github.com/chuli1122/Eventide.git",
+]
+
+[project.scripts]
+eventide-mcp = "eventide_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eventide_mcp"]
