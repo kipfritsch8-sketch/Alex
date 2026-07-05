@@ -204,7 +204,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         last_msg_at = None
         if arguments.get("last_message_at"):
             last_msg_at = datetime.fromisoformat(arguments["last_message_at"])
-        _runtime.tick(state, now, last_msg_at)
+        _runtime.tick(state, now, last_counterpart_message_at=last_msg_at)
         _persist(state)
         card = _runtime.render_card(state, now)
         return [TextContent(type="text", text=card or "（状态已更新，无可见变化）")]
@@ -244,7 +244,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         last_msg_at = None
         if arguments.get("last_message_at"):
             last_msg_at = datetime.fromisoformat(arguments["last_message_at"])
-        trigger = _runtime.maybe_dream(None, state, now, last_msg_at)
+        trigger = _runtime.maybe_dream(None, state, now, last_counterpart_message_at=last_msg_at)
         if trigger:
             return [TextContent(type="text", text=json.dumps({
                 "triggered": True,
