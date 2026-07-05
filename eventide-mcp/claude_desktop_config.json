@@ -2,7 +2,7 @@
   "mcpServers": {
     "eventide": {
       "type": "sse",
-      "url": "https://mcp.你的域名.com/sse",
+      "url": "https://eventide.alexmem.xyz/sse",
       "headers": {
         "Authorization": "Bearer 你的API密钥"
       }
