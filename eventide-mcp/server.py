@@ -16,7 +16,13 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from eventide import EventideRuntime, SettlementResult, parse_settlement_result
+from eventide import (
+    DreamSeed,
+    EventideRuntime,
+    TriggerWord,
+    find_trigger_matches,
+    parse_settlement_result,
+)
 
 STATE_PATH = Path(os.environ.get("EVENTIDE_STATE_PATH", "eventide_state.json"))
 
@@ -147,6 +153,64 @@ def dream_apply_tags(tags: list[str]) -> str:
         return json.dumps(
             {"applied": applied, "values": state.values}, ensure_ascii=False
         )
+
+
+TRIGGER_WORDS_PATH = STATE_PATH.parent / "trigger_words.json"
+
+
+def _load_trigger_words() -> list:
+    if TRIGGER_WORDS_PATH.exists():
+        return json.loads(TRIGGER_WORDS_PATH.read_text())
+    return []
+
+
+@mcp.tool()
+def trigger_word_set(words: list[dict]) -> str:
+    """设置称呼触发词表（覆盖式）。每项形如
+    {"key": "nickname_1", "text": "老公", "type": "nickname"}，
+    type 可为 nickname/name/phrase。设置后用 trigger_check 检测消息。"""
+    with _lock:
+        TRIGGER_WORDS_PATH.write_text(json.dumps(words, ensure_ascii=False, indent=2))
+    return f"已保存 {len(words)} 个触发词"
+
+
+@mcp.tool()
+def trigger_check(text: str) -> str:
+    """检测一条消息里是否命中称呼触发词。命中时返回匹配详情，
+    可据此调用 body_start_event('voice_or_name_trigger') 触发身体反应。"""
+    words = [TriggerWord(**w) for w in _load_trigger_words()]
+    if not words:
+        return "未设置触发词，请先用 trigger_word_set 配置"
+    matches = find_trigger_matches(words, text)
+    if not matches:
+        return "未命中触发词"
+    return json.dumps(
+        [{"key": m.key, "text": m.text, "type": m.type, "count": m.count} for m in matches],
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+def dream_check(theme: str, intensity: str = "medium",
+                silence_minutes: int = 0) -> str:
+    """尝试触发一次梦境。theme 是梦的主题（如"想被标记的梦"），
+    intensity 为 low/medium/high。silence_minutes 为对方已沉默的分钟数。
+    受深夜时间窗（00:00-08:30）、沉默时长和冷却时间限制，未触发时返回原因。
+    触发成功会返回梦境生成指引，按指引写出梦境卡后，用 dream_apply_tags
+    把梦后标签（如 released/unfinished/marked 等）结算回身体状态。"""
+    with _lock:
+        state = _load()
+        seed = DreamSeed(theme=theme, intensity=intensity)
+        last = None
+        if silence_minutes > 0:
+            from datetime import timedelta
+
+            last = _now() - timedelta(minutes=silence_minutes)
+        trig = runtime.maybe_dream(seed, state, _now(), last_counterpart_message_at=last)
+        if trig is None:
+            return "本次未触发梦境（不在深夜窗口、沉默不足、冷却中或概率未命中）"
+        _save(state)
+        return trig.trigger_content
 
 
 if __name__ == "__main__":

@@ -13,7 +13,10 @@
 | `body_enter_cycle` | 强制切换周期 |
 | `settlement_prompt` | 生成互动结算 prompt |
 | `settlement_apply` | 应用结算结果 JSON |
-| `dream_apply_tags` | 应用梦后标签 |
+| `dream_check` | 尝试触发梦境（受深夜窗口/沉默/冷却限制），返回梦境生成指引 |
+| `dream_apply_tags` | 应用梦后标签，把梦的影响结算回身体 |
+| `trigger_word_set` | 设置称呼触发词表 |
+| `trigger_check` | 检测消息是否命中触发词 |
 
 状态保存在服务器上的 `eventide_state.json`，跨会话持续。
 
