@@ -1,14 +1,10 @@
 {
   "mcpServers": {
     "eventide": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/kipfritsch8-sketch/alex.git#subdirectory=eventide-mcp",
-        "eventide-mcp"
-      ],
-      "env": {
-        "EVENTIDE_STATE_FILE": "/Users/你的用户名/.eventide_state.json"
+      "type": "sse",
+      "url": "https://mcp.你的域名.com/sse",
+      "headers": {
+        "Authorization": "Bearer 你的API密钥"
       }
     }
   }

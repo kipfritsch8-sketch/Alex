@@ -1,23 +1,36 @@
-"""Eventide MCP Server — exposes physiological state tools to Claude Desktop."""
+"""Eventide MCP Server — HTTP/SSE transport for remote deployment."""
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server.sse import SseServerTransport
 from mcp.types import TextContent, Tool
+from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Mount, Route
 
 from eventide import EventideRuntime
-from eventide.config import DEFAULT_CONFIG
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("eventide-mcp")
+
+# ---------------------------------------------------------------------------
+# Config from environment
+# ---------------------------------------------------------------------------
+
+STATE_FILE = Path(os.environ.get("EVENTIDE_STATE_FILE", Path.home() / ".eventide_state.json"))
+API_KEY = os.environ.get("EVENTIDE_API_KEY", "")  # required in production
 
 # ---------------------------------------------------------------------------
 # State persistence
 # ---------------------------------------------------------------------------
-
-STATE_FILE = Path(os.environ.get("EVENTIDE_STATE_FILE", Path.home() / ".eventide_state.json"))
 
 _runtime = EventideRuntime()
 
@@ -51,10 +64,10 @@ def _persist(state) -> None:
 
 
 # ---------------------------------------------------------------------------
-# MCP Server
+# MCP Server & Tools
 # ---------------------------------------------------------------------------
 
-app = Server("eventide")
+mcp = Server("eventide")
 
 TOOLS: list[Tool] = [
     Tool(
@@ -63,15 +76,12 @@ TOOLS: list[Tool] = [
             "获取当前生理状态的完整快照，包括所有数值字段、当前周期和活跃事件。"
             "在每次对话开始时调用，将返回的 state_card 注入到你的系统提示中。"
         ),
-        inputSchema={
-            "type": "object",
-            "properties": {},
-        },
+        inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
         name="eventide_tick",
         description=(
-            "推进时间并更新生理状态。应在获取状态卡片之前调用，以确保状态是最新的。"
+            "推进时间并更新生理状态。应在获取状态卡片之前调用，确保状态是最新的。"
             "返回更新后的状态卡片（隐藏提示词）。"
         ),
         inputSchema={
@@ -79,21 +89,15 @@ TOOLS: list[Tool] = [
             "properties": {
                 "last_message_at": {
                     "type": "string",
-                    "description": "对方最后一条消息的 ISO 时间戳（可选），用于计算互动频率对状态的影响。",
+                    "description": "对方最后一条消息的 ISO 时间戳（可选）",
                 }
             },
         },
     ),
     Tool(
         name="eventide_render_card",
-        description=(
-            "渲染当前状态的隐藏提示词卡片，用于注入到 LLM system prompt 中，"
-            "让 AI 伴侣感知自身生理状态。不推进时间。"
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {},
-        },
+        description="渲染当前状态的隐藏提示词卡片，用于注入到 LLM system prompt。不推进时间。",
+        inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
         name="eventide_start_event",
@@ -108,65 +112,47 @@ TOOLS: list[Tool] = [
             "type": "object",
             "required": ["event_key"],
             "properties": {
-                "event_key": {
-                    "type": "string",
-                    "description": "事件标识符，例如 morning_arousal",
-                }
+                "event_key": {"type": "string", "description": "事件标识符"}
             },
         },
     ),
     Tool(
         name="eventide_enter_cycle",
-        description=(
-            "切换到指定的生理周期。可用周期：stable, building, preheat, sensitive, ebb, recovery。"
-        ),
+        description="切换到指定周期：stable, building, preheat, sensitive, ebb, recovery。",
         inputSchema={
             "type": "object",
             "required": ["cycle_key"],
             "properties": {
-                "cycle_key": {
-                    "type": "string",
-                    "description": "周期标识符，例如 sensitive",
-                }
+                "cycle_key": {"type": "string", "description": "周期标识符"}
             },
         },
     ),
     Tool(
         name="eventide_settle_interaction",
         description=(
-            "分析一段对话窗口并结算其对生理状态的影响。"
-            "在对话结束或重要互动节点后调用，传入相关对话文本。"
+            "分析一段对话窗口并返回结算 prompt，供调用方发给 LLM 后获取 delta 再结算状态影响。"
         ),
         inputSchema={
             "type": "object",
             "required": ["message_window"],
             "properties": {
-                "message_window": {
-                    "type": "string",
-                    "description": "需要分析的对话文本片段",
-                }
+                "message_window": {"type": "string", "description": "需要分析的对话文本"}
             },
         },
     ),
     Tool(
         name="eventide_maybe_dream",
-        description=(
-            "检查是否应触发梦境事件，并返回梦境触发器（如果有）。"
-            "适合在进入睡眠场景或长时间静默后调用。"
-        ),
+        description="检查是否应触发梦境事件，返回梦境触发器（如果有）。",
         inputSchema={
             "type": "object",
             "properties": {
-                "last_message_at": {
-                    "type": "string",
-                    "description": "最后一条消息的 ISO 时间戳（可选）",
-                }
+                "last_message_at": {"type": "string", "description": "最后消息时间戳（可选）"}
             },
         },
     ),
     Tool(
         name="eventide_apply_dream_tags",
-        description="将梦境标签效果应用到生理状态。传入 maybe_dream 返回的 tags 列表。",
+        description="将梦境标签效果应用到生理状态。",
         inputSchema={
             "type": "object",
             "required": ["tags"],
@@ -174,33 +160,30 @@ TOOLS: list[Tool] = [
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "梦境标签列表，例如 [\"arousal\", \"longing\"]",
+                    "description": "梦境标签列表",
                 }
             },
         },
     ),
     Tool(
         name="eventide_reset",
-        description="将生理状态重置为初始状态（stable 周期）。",
+        description="将生理状态重置为初始状态。",
         inputSchema={
             "type": "object",
             "properties": {
-                "cycle_key": {
-                    "type": "string",
-                    "description": "初始周期，默认为 stable",
-                }
+                "cycle_key": {"type": "string", "description": "初始周期，默认 stable"}
             },
         },
     ),
 ]
 
 
-@app.list_tools()
+@mcp.list_tools()
 async def list_tools() -> list[Tool]:
     return TOOLS
 
 
-@app.call_tool()
+@mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     now = _now()
 
@@ -239,8 +222,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if success:
             card = _runtime.render_card(state, now)
             return [TextContent(type="text", text=f"事件 {event_key} 已触发。\n\n{card or ''}")]
-        else:
-            return [TextContent(type="text", text=f"无法触发事件 {event_key}（可能已有活跃事件或事件不存在）。")]
+        return [TextContent(type="text", text=f"无法触发事件 {event_key}（已有活跃事件或事件不存在）。")]
 
     elif name == "eventide_enter_cycle":
         state = _get_or_create_state()
@@ -253,15 +235,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "eventide_settle_interaction":
         state = _get_or_create_state()
         prompt = _runtime.settlement_prompt(state, arguments["message_window"])
-        # Return the prompt for the caller (Claude) to send to LLM and pass result back
-        return [TextContent(type="text", text=json.dumps({
-            "settlement_prompt": prompt,
-            "instruction": (
-                "请将 settlement_prompt 发送给 LLM 获取结算结果，"
-                "然后用 eventide_apply_settlement 工具传入结果。"
-                "或者直接将结果 JSON 传入 eventide_apply_settlement。"
-            ),
-        }, ensure_ascii=False, indent=2))]
+        return [TextContent(type="text", text=json.dumps(
+            {"settlement_prompt": prompt}, ensure_ascii=False, indent=2
+        ))]
 
     elif name == "eventide_maybe_dream":
         state = _get_or_create_state()
@@ -275,15 +251,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 "tags": list(trigger.tags) if hasattr(trigger, "tags") else [],
                 "description": str(trigger),
             }, ensure_ascii=False, indent=2))]
-        return [TextContent(type="text", text=json.dumps({"triggered": False}, ensure_ascii=False))]
+        return [TextContent(type="text", text=json.dumps({"triggered": False}))]
 
     elif name == "eventide_apply_dream_tags":
         state = _get_or_create_state()
-        tags = arguments["tags"]
-        changes = _runtime.apply_dream_tags(state, tags)
+        changes = _runtime.apply_dream_tags(state, arguments["tags"])
         _persist(state)
         return [TextContent(type="text", text=json.dumps({
-            "applied_tags": tags,
+            "applied_tags": arguments["tags"],
             "value_changes": changes,
         }, ensure_ascii=False, indent=2))]
 
@@ -296,14 +271,59 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=f"未知工具：{name}")]
 
 
+# ---------------------------------------------------------------------------
+# Auth middleware
+# ---------------------------------------------------------------------------
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not API_KEY:
+            return await call_next(request)
+        # health check 不鉴权
+        if request.url.path == "/health":
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {API_KEY}":
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# Starlette app with SSE transport
+# ---------------------------------------------------------------------------
+
+sse = SseServerTransport("/messages")
+
+
+async def handle_sse(request: Request):
+    async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+        await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
+
+
+async def health(request: Request):
+    return JSONResponse({"status": "ok"})
+
+
+def create_app() -> Starlette:
+    app = Starlette(
+        routes=[
+            Route("/health", health),
+            Route("/sse", handle_sse),
+            Mount("/messages", app=sse.handle_post_message),
+        ]
+    )
+    app.add_middleware(ApiKeyMiddleware)
+    return app
+
+
+app = create_app()
+
+
 def main():
-    import asyncio
-    asyncio.run(_run())
-
-
-async def _run():
-    async with stdio_server() as streams:
-        await app.run(streams[0], streams[1], app.create_initialization_options())
+    import uvicorn
+    port = int(os.environ.get("EVENTIDE_PORT", "8765"))
+    host = os.environ.get("EVENTIDE_HOST", "127.0.0.1")
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

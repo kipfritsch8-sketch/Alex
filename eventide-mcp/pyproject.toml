@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "MCP server for Eventide physiological state system"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp[cli]>=1.0.0",
+    "starlette>=0.40.0",
+    "uvicorn>=0.30.0",
     "eventide @ git+https://github.com/chuli1122/Eventide.git",
 ]
 

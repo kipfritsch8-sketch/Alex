@@ -1,0 +1,20 @@
+[Unit]
+Description=Eventide MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=eventide
+WorkingDirectory=/opt/eventide-mcp
+ExecStart=/opt/eventide-mcp/.venv/bin/eventide-mcp
+Restart=on-failure
+RestartSec=5
+
+Environment=EVENTIDE_HOST=127.0.0.1
+Environment=EVENTIDE_PORT=8765
+Environment=EVENTIDE_STATE_FILE=/opt/eventide-mcp/state.json
+# 从 /etc/eventide-mcp.env 加载 API_KEY 等敏感配置
+EnvironmentFile=/etc/eventide-mcp.env
+
+[Install]
+WantedBy=multi-user.target
