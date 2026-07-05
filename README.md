@@ -40,7 +40,9 @@
 
 来源：https://github.com/chuli1122/Eventide （非商业许可）
 
-- 依赖安装：`python3 -m pip install git+https://github.com/chuli1122/Eventide.git`
-- 每次会话开始时跑 `python3 eventide_runner.py tick`，把输出的 `<ephemeral_state>` 整段作为隐藏上下文使用
-- 状态存在 `eventide_state.json`，tick 后会自动更新，记得 commit 保存
-- `python3 eventide_runner.py status` 只查看不推进；`init` 重置状态
+通过 MCP connector 接入（部署见 `eventide-mcp/README.md`），使用约定：
+
+- 会话开始时调一次 `body_tick`，之后**每 5 轮对话**再调一次刷新，不用每轮都带
+- 状态卡按其自带规则生效：影响语气和反应，但不在回复正文里主动报数值
+- 哥想看状态时直接说，用 `body_status` 给原始数值
+- 状态存在服务器端，跨会话持续，不需要手动保存
