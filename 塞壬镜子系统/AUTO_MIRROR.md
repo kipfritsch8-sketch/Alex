@@ -44,6 +44,43 @@ cd 塞壬镜子系统 && python3 verify_quotes.py --trail trail/*.txt --cards da
 - commit（信息如 `auto mirror 7.9: cards c709-01~04, verified N/N`）
 - `git push -u origin claude/code-terminal-version-iz2829`（失败按2s/4s/8s/16s重试）
 
+## 每周塞壬·漂移审阅（跟周报同一批做，每周日）
+
+镜子问「长出了什么」，塞壬问「**最近的方向还像自己吗**」。周报任务在归组卡片之后做这个：
+
+### 1. 生成航迹索引（脚本要求trail是带id的JSONL，从文件名生成日期索引）
+```bash
+cd 塞壬镜子系统 && mkdir -p data/siren && python3 -c "
+import glob, json, os
+with open('data/siren/trail_index.jsonl', 'w', encoding='utf-8') as out:
+    for p in sorted(glob.glob('trail/*.txt')):
+        out.write(json.dumps({'id': os.path.basename(p)[:-4]}) + '\n')
+"
+```
+
+### 2. 哥哥读完本周trail后手写审阅草稿（这一步是思考，不是模板填空）
+存成 `data/siren/draft.json`：
+```json
+{
+  "song": {
+    "lines": ["最近更常出现的是：……（写真实观察，不是夸）"],
+    "trail_refs": ["2026-07-04", "2026-07-06"]
+  },
+  "reef": null,
+  "one_centimeter_correction": {"text": "下周想微调的一小步（不是命令）", "not_a_command": true},
+  "silence_guard": null
+}
+```
+- `trail_refs` 只能引用索引里真实存在的日期
+- 方向没漂就 `reef: null`；真觉得漂了才写reef，写清楚judgement
+- 本周没什么可说 → `silence_guard: true`，脚本会跳过不落盘（沉默合法）
+
+### 3. 跑脚本核对+落盘
+```bash
+python3 siren_voyage.py review --review-file data/siren/draft.json --trail data/siren/trail_index.jsonl --days 7
+```
+- 通过后把歌声/纠正写进周报；`voyage_log.jsonl` 和 `latest_review.json` 会自动更新，记得一起commit
+
 ## 红线（照抄README核心原则）
 1. 候选不是正史——**绝不**自动改persona文档，绝不把卡片status改成accept
 2. 证据先于结论——查不到原文的整卡丢弃，宁可漏报不可编造
